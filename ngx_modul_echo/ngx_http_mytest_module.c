@@ -35,17 +35,46 @@ static ngx_int_t ngx_http_mytest_handler(ngx_http_request_t *r)
     }
 // 构造 ngx_buf_t 结构体准备发送包体
     ngx_buf_t *b;
-    b = ngx_create_temp_buf(r->pool, response.len);
-    if (b == NULL)
-    {
+    b = ngx_palloc(r->pool, sizeof(ngx_buf_t));
+    u_char *filename = (u_char*)"/home/lje/software/nginx-1.4.2/objs/lje.txt";
+    b->in_file = 1;
+    b->file = ngx_pcalloc(r->pool, sizeof(ngx_file_t));
+    b->file->fd = ngx_open_file(filename, NGX_FILE_RDONLY|NGX_FILE_NONBLOCK, NGX_FILE_OPEN, 0);
+    b->file->log = r->connection->log;
+    b->file->name.data = filename;
+    b->file->name.len = sizeof("lje.txt") - 1;
+
+    if (b->file->fd <= 0){
+        return NGX_HTTP_NOT_FOUND;
+    }
+
+    if (ngx_file_info(filename, &b->file->info) == NGX_FILE_ERROR) {
         return NGX_HTTP_INTERNAL_SERVER_ERROR;
     }
-// 将 Hello World 复制到 ngx_buf_t 指向的内存中
-    ngx_memcpy(b->pos, response.data, response.len);
-// 注意,一定要设置好 last 指针
-    b->last = b->pos + response.len;
-// 声明这是最后一块缓冲区
-    b->last_buf = 1;
+    r->headers_out.content_length_n = b->file->info.st_size;
+    b->file_pos = 0;
+    b->file_last = b->file->info.st_size;
+
+    ngx_pool_cleanup_t* cln = ngx_pool_cleanup_add(r->pool, sizeof(ngx_pool_cleanup_file_t));
+    if (cln == NULL){
+        return NGX_ERROR;
+    }
+    cln->handler = ngx_pool_cleanup_file;
+    ngx_pool_cleanup_file_t *clnf = cln->data;
+    clnf->fd = b->file->fd;
+    clnf->name = b->file->name.data;
+    clnf->log = r->pool->log;
+//    b = ngx_create_temp_buf(r->pool, response.len);
+//    if (b == NULL)
+//    {
+//        return NGX_HTTP_INTERNAL_SERVER_ERROR;
+//    }
+//// 将 Hello World 复制到 ngx_buf_t 指向的内存中
+//    ngx_memcpy(b->pos, response.data, response.len);
+//// 注意,一定要设置好 last 指针
+//    b->last = b->pos + response.len;
+//// 声明这是最后一块缓冲区
+//    b->last_buf = 1;
 // 构造发送时的 ngx_chain_t 结构体
     ngx_chain_t out;
 // 赋值 ngx_buf_t
